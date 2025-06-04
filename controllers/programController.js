@@ -1,21 +1,56 @@
-const Program = require('../models/Program'); // Adjust path
-const cloudinary = require('../config/cloudinary'); // Adjust path
+const mongoose = require('mongoose'); // Ensure mongoose is imported for ObjectId.isValid
+const Program = require('../models/Program');
+const ProgramSeries = require('../models/ProgramSeries');
+const cloudinary = require('../config/cloudinary'); // Your Cloudinary config
 const streamifier = require('streamifier');
 const slugify = require('slugify');
+
+// Helper to upload a file stream to Cloudinary
+const streamUploadToCloudinary = (fileBuffer, options) => {
+    return new Promise((resolve, reject) => {
+        let stream = cloudinary.uploader.upload_stream(
+            options, // options like folder, resource_type
+            (error, result) => {
+                if (result) { resolve(result); } else { reject(error); }
+            }
+        );
+        streamifier.createReadStream(fileBuffer).pipe(stream);
+    });
+};
 
 // @desc    Get all programs
 // @route   GET /api/programs
 // @access  Public
 exports.getAllPrograms = async (req, res) => {
   try {
-    const programs = await Program.find().sort({ createdAt: -1 });
-    const formattedPrograms = programs.map(p => ({
-        ...p.toObject(),
-        thumbnail: p.thumbnailUrl ? { url: p.thumbnailUrl } : undefined
-    }));
-    res.status(200).json({ success: true, count: formattedPrograms.length, data: formattedPrograms });
+    const query = req.query.seriesId ? { programSeries: req.query.seriesId } : {};
+    const programs = await Program.find(query)
+                                  .populate('programSeries', 'title slug')
+                                  .sort({ episodeNumber: 1, createdAt: -1 });
+    res.status(200).json({ success: true, count: programs.length, data: programs });
   } catch (error) {
-    console.error(error);
+    console.error("Error getting all programs:", error);
+    res.status(500).json({ success: false, error: 'Server Error' });
+  }
+};
+
+// @desc    Get all programs for a specific series ID
+// @route   GET /api/programs/series/:seriesId
+// @access  Public
+exports.getProgramsBySeriesId = async (req, res) => {
+  try {
+    const seriesId = req.params.seriesId;
+    if (!mongoose.Types.ObjectId.isValid(seriesId)) {
+        return res.status(400).json({ success: false, error: 'Invalid Series ID format' });
+    }
+    const programs = await Program.find({ programSeries: seriesId })
+                                  .sort({ episodeNumber: 1, publishDate: 'asc' });
+    if (!programs) {
+      return res.status(200).json({ success: true, count: 0, data: [] });
+    }
+    res.status(200).json({ success: true, count: programs.length, data: programs });
+  } catch (error) {
+    console.error(`Error fetching programs for series ${req.params.seriesId}:`, error);
     res.status(500).json({ success: false, error: 'Server Error' });
   }
 };
@@ -25,12 +60,11 @@ exports.getAllPrograms = async (req, res) => {
 // @access  Public
 exports.getProgramById = async (req, res) => {
     try {
-      console.log("this is program");
-      const program = await Program.findById(req.params.id);
+      const program = await Program.findById(req.params.id).populate('programSeries', 'title slug');
       if (!program) {
         return res.status(404).json({ success: false, error: 'Program not found' });
       }
-      res.status(200).json({ success: true, data: program }); // Send raw data
+      res.status(200).json({ success: true, data: program });
     } catch (error) {
       console.error("Error fetching program by ID:", error);
       if (error.kind === 'ObjectId') {
@@ -45,55 +79,72 @@ exports.getProgramById = async (req, res) => {
 // @access  Public
 exports.getProgramBySlug = async (req, res) => {
   try {
-    const program = await Program.findOne({ slug: req.params.slug });
+    const program = await Program.findOne({ slug: req.params.slug }).populate('programSeries', 'title slug');
     if (!program) {
       return res.status(404).json({ success: false, error: 'Program not found' });
     }
     res.status(200).json({ success: true, data: program });
   } catch (error) {
-    console.error(error);
+    console.error("Error fetching program by slug:", error);
     res.status(500).json({ success: false, error: 'Server Error' });
   }
 };
 
 // @desc    Create a new program
 // @route   POST /api/programs
-// @access  Private
+// @access  Private (add auth middleware)
 exports.createProgram = async (req, res) => {
   try {
-    const { title, description, price, duration, youtubeLink } = req.body;
-    const thumbnailFile = req.files?.thumbnailFile ? req.files.thumbnailFile[0] : null;
+    const { title, description, price, duration, programSeries, episodeNumber } = req.body;
+    // req.files will be populated by M_uploadProgramAssetsForCloudinary middleware
+    const thumbnailFile = req.files?.thumbnailFile?.[0];
+    const videoFile = req.files?.videoFile?.[0];
 
-    if (!title || !description || !price || !duration) {
+    if (!title || !description || !price || !duration ) {
         return res.status(400).json({ success: false, error: 'Title, Description, Price, and Duration are required.' });
     }
     if (!thumbnailFile) {
-      return res.status(400).json({ success: false, error: 'Thumbnail image is required for new program' });
+      return res.status(400).json({ success: false, error: 'Thumbnail image (thumbnailFile) is required.' });
+    }
+    // Make videoFile required if all programs must have a video
+    if (!videoFile) {
+      return res.status(400).json({ success: false, error: 'Program video (videoFile) is required.' });
     }
 
-    const streamUpload = (file) => {
-        return new Promise((resolve, reject) => {
-            let stream = cloudinary.uploader.upload_stream(
-              { folder: "physio_programs" },
-              (error, result) => {
-                if (result) { resolve(result); } else { reject(error); }
-              }
-            );
-          streamifier.createReadStream(file.buffer).pipe(stream);
-        });
-    };
-    const cloudinaryResult = await streamUpload(thumbnailFile);
+    if (programSeries) {
+        const seriesExists = await ProgramSeries.findById(programSeries);
+        if (!seriesExists) {
+            return res.status(400).json({ success: false, error: 'Specified Program Series does not exist.' });
+        }
+    }
 
-    const newProgram = await Program.create({
+    // Upload thumbnail to Cloudinary
+    const thumbUploadOpts = { folder: "program_thumbnails", resource_type: "image" };
+    const thumbResult = await streamUploadToCloudinary(thumbnailFile.buffer, thumbUploadOpts);
+
+    // Upload video to Cloudinary
+    const videoUploadOpts = { folder: "program_videos", resource_type: "video" };
+    const videoResult = await streamUploadToCloudinary(videoFile.buffer, videoUploadOpts);
+
+    const newProgramData = {
       title, description, price: Number(price), duration,
-      youtubeLink: youtubeLink || '',
-      thumbnailUrl: cloudinaryResult.secure_url,
-      cloudinaryPublicId: cloudinaryResult.public_id,
-      // Slug is auto-generated by Mongoose pre-save hook
-    });
+      thumbnailUrl: thumbResult.secure_url,
+      thumbnailCloudinaryPublicId: thumbResult.public_id,
+      videoUrl: videoResult.secure_url,
+      videoCloudinaryPublicId: videoResult.public_id,
+      episodeNumber: episodeNumber ? Number(episodeNumber) : 1,
+    };
+    if (programSeries) {
+        newProgramData.programSeries = programSeries;
+    }
+
+    const newProgram = await Program.create(newProgramData);
     res.status(201).json({ success: true, data: newProgram });
   } catch (error) {
     console.error("Create Program Error:", error);
+    if (error.code === 11000) { // Duplicate key (slug)
+        return res.status(400).json({ success: false, error: 'A program with this title/slug already exists.' });
+    }
     if (error.name === 'ValidationError') {
         return res.status(400).json({ success: false, error: Object.values(error.errors).map(val => val.message).join(', ') });
     }
@@ -103,50 +154,88 @@ exports.createProgram = async (req, res) => {
 
 // @desc    Update a program
 // @route   PUT /api/programs/:id
-// @access  Private
+// @access  Private (add auth middleware)
 exports.updateProgram = async (req, res) => {
     try {
         let program = await Program.findById(req.params.id);
         if (!program) { return res.status(404).json({ success: false, error: 'Program not found' }); }
 
-        const { title, description, price, duration, youtubeLink, thumbnail: thumbnailUrlFromForm } = req.body;
-        const thumbnailFile = req.files?.thumbnailFile ? req.files.thumbnailFile[0] : null;
-        
-        let updateData = {};
-        if (title) updateData.title = title;
-        if (description) updateData.description = description;
-        if (price !== undefined) updateData.price = Number(price);
-        if (duration) updateData.duration = duration;
-        if (youtubeLink !== undefined) updateData.youtubeLink = youtubeLink;
+        const { title, description, price, duration, programSeries, episodeNumber, clearThumbnail, clearVideo } = req.body;
+        const newThumbnailFile = req.files?.thumbnailFile?.[0];
+        const newVideoFile = req.files?.videoFile?.[0];
 
-        if (thumbnailFile) {
-            if (program.cloudinaryPublicId) {
-                try { await cloudinary.uploader.destroy(program.cloudinaryPublicId); }
-                catch (e) { console.warn("Old cloudinary image delete failed (program update):", e.message); }
+        let updateData = { ...req.body };
+        // Remove fields managed by file uploads or specific logic from direct update
+        delete updateData.thumbnailUrl;
+        delete updateData.thumbnailCloudinaryPublicId;
+        delete updateData.videoUrl;
+        delete updateData.videoCloudinaryPublicId;
+        delete updateData.slug; // Slug updates based on title change
+
+        if (programSeries !== undefined) {
+            if (programSeries) {
+                const seriesExists = await ProgramSeries.findById(programSeries);
+                if (!seriesExists) return res.status(400).json({ success: false, error: 'Specified Program Series does not exist.' });
+                updateData.programSeries = programSeries;
+            } else {
+                updateData.programSeries = null;
             }
-            const streamUpload = (file) => { /* ... same streamUpload helper ... */ return new Promise((resolve, reject) => { let stream = cloudinary.uploader.upload_stream( { folder: "physio_programs" }, (error, result) => { if (result) resolve(result); else reject(error); } ); streamifier.createReadStream(file.buffer).pipe(stream); }); };
-            const cloudinaryResult = await streamUpload(thumbnailFile);
-            updateData.thumbnailUrl = cloudinaryResult.secure_url;
-            updateData.cloudinaryPublicId = cloudinaryResult.public_id;
-        } else if (thumbnailUrlFromForm && program.thumbnailUrl !== thumbnailUrlFromForm) {
-            updateData.thumbnailUrl = thumbnailUrlFromForm; 
-        } else if (!thumbnailUrlFromForm && program.thumbnailUrl) { // Explicitly clear
-            if (program.cloudinaryPublicId) {
-                try { await cloudinary.uploader.destroy(program.cloudinaryPublicId); }
-                catch (e) { console.warn("Old cloudinary image delete failed (program update - clear):", e.message); }
-                updateData.cloudinaryPublicId = null;
+        }
+        if (price !== undefined) updateData.price = Number(price);
+        if (episodeNumber !== undefined) updateData.episodeNumber = Number(episodeNumber);
+
+
+        // Handle Thumbnail Update or Clearing
+        if (newThumbnailFile) {
+            if (program.thumbnailCloudinaryPublicId) { // Delete old thumbnail
+                try { await cloudinary.uploader.destroy(program.thumbnailCloudinaryPublicId, { resource_type: "image" }); }
+                catch (e) { console.warn("Old thumbnail delete failed:", e.message); }
+            }
+            const thumbUploadOpts = { folder: "program_thumbnails", resource_type: "image" };
+            const thumbResult = await streamUploadToCloudinary(newThumbnailFile.buffer, thumbUploadOpts);
+            updateData.thumbnailUrl = thumbResult.secure_url;
+            updateData.thumbnailCloudinaryPublicId = thumbResult.public_id;
+        } else if (clearThumbnail === 'true' && program.thumbnailUrl) {
+            if (program.thumbnailCloudinaryPublicId) {
+                try { await cloudinary.uploader.destroy(program.thumbnailCloudinaryPublicId, { resource_type: "image" }); }
+                catch (e) { console.warn("Cloudinary thumbnail delete failed (clear):", e.message); }
             }
             updateData.thumbnailUrl = null;
+            updateData.thumbnailCloudinaryPublicId = null;
         }
 
-        if (title && title !== program.title) { // Slug is handled by pre-save hook
-            updateData.slug = slugify(title, { lower: true, strict: true }); // Also explicitly set if model hook doesn't always run on findByIdAndUpdate
+        // Handle Video Update or Clearing
+        if (newVideoFile) {
+            if (program.videoCloudinaryPublicId) { // Delete old video
+                try { await cloudinary.uploader.destroy(program.videoCloudinaryPublicId, { resource_type: "video" }); }
+                catch (e) { console.warn("Old video delete failed:", e.message); }
+            }
+            const videoUploadOpts = { folder: "program_videos", resource_type: "video" };
+            const videoResult = await streamUploadToCloudinary(newVideoFile.buffer, videoUploadOpts);
+            updateData.videoUrl = videoResult.secure_url;
+            updateData.videoCloudinaryPublicId = videoResult.public_id;
+        } else if (clearVideo === 'true' && program.videoUrl) {
+            if (program.videoCloudinaryPublicId) {
+                try { await cloudinary.uploader.destroy(program.videoCloudinaryPublicId, { resource_type: "video" }); }
+                catch (e) { console.warn("Cloudinary video delete failed (clear):", e.message); }
+            }
+            updateData.videoUrl = null;
+            updateData.videoCloudinaryPublicId = null;
         }
-        
-        const updatedProgram = await Program.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+
+
+        if (title && title !== program.title) {
+            updateData.slug = slugify(title, { lower: true, strict: true });
+        }
+
+        const updatedProgram = await Program.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true })
+                                            .populate('programSeries', 'title slug');
         res.status(200).json({ success: true, data: updatedProgram });
     } catch (error) {
         console.error("Update Program Error:", error);
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, error: 'A program with this title/slug already exists.' });
+        }
          if (error.name === 'ValidationError') {
             return res.status(400).json({ success: false, error: Object.values(error.errors).map(val => val.message).join(', ') });
         }
@@ -156,7 +245,7 @@ exports.updateProgram = async (req, res) => {
 
 // @desc    Delete a program
 // @route   DELETE /api/programs/:id
-// @access  Private
+// @access  Private (add auth middleware)
 exports.deleteProgram = async (req, res) => {
   try {
     const program = await Program.findById(req.params.id);
@@ -164,12 +253,19 @@ exports.deleteProgram = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Program not found' });
     }
 
-    if (program.cloudinaryPublicId) {
-      try {await cloudinary.uploader.destroy(program.cloudinaryPublicId); }
-      catch(e){console.warn("Cloudinary delete failed for program thumbnail:", e.message)}
+    // Delete thumbnail from Cloudinary
+    if (program.thumbnailCloudinaryPublicId) {
+      try { await cloudinary.uploader.destroy(program.thumbnailCloudinaryPublicId, { resource_type: "image" }); }
+      catch(e){ console.warn("Cloudinary thumbnail delete failed:", e.message); }
     }
+    // Delete video from Cloudinary
+    if (program.videoCloudinaryPublicId) {
+      try { await cloudinary.uploader.destroy(program.videoCloudinaryPublicId, { resource_type: "video" }); }
+      catch(e){ console.warn("Cloudinary video delete failed:", e.message); }
+    }
+
     await program.deleteOne();
-    res.status(200).json({ success: true, message: 'Program removed successfully' }); // For consistency
+    res.status(200).json({ success: true, message: 'Program removed successfully' });
   } catch (error) {
     console.error("Delete Program Error:", error);
     res.status(500).json({ success: false, error: 'Server Error' });
