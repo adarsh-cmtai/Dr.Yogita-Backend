@@ -18,7 +18,7 @@ const nutritionPlanRoutes = require('./routes/nutritionPlanRoutes'); // Import n
 const podcastSeriesRoutes = require('./routes/podcastSeriesRoutes'); // New
 const podcastEpisodeRoutes = require('./routes/podcastEpisodeRoutes');
 const programSeriesRoutes = require('./routes/programSeriesRoutes'); 
-const commentRoutes = require('./routes/comments');
+// const commentRoutes = require('./routes/comments');
 
 const app = express();
 
@@ -45,7 +45,7 @@ app.use('/api/blogs', blogRoutes);
 app.use('/api/podcast-series', podcastSeriesRoutes);         // New mount point for series
 app.use('/api/podcast-episodes', podcastEpisodeRoutes);  
 app.use('/api/program-series', programSeriesRoutes);
-app.use('/api/comments', commentRoutes);
+// app.use('/api/comments', commentRoutes);
 
 // Basic error handler (ensure it's AFTER your routes)
 app.use((err, req, res, next) => {
