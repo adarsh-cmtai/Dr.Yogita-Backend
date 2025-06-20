@@ -5,6 +5,7 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const path = require('path'); // For serving static files
 const blogRoutes = require('./routes/blogRoutes');
+const settingRoutes = require('./routes/setting.routes.js');
 
 dotenv.config();
 connectDB();
@@ -45,6 +46,7 @@ app.use('/api/blogs', blogRoutes);
 app.use('/api/podcast-series', podcastSeriesRoutes);         // New mount point for series
 app.use('/api/podcast-episodes', podcastEpisodeRoutes);  
 app.use('/api/program-series', programSeriesRoutes);
+app.use('/api/settings', settingRoutes);
 // app.use('/api/comments', commentRoutes);
 
 // Basic error handler (ensure it's AFTER your routes)
