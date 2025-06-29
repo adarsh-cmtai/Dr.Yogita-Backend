@@ -77,7 +77,25 @@ const genericThumbnailsStorage = createDiskStorageForEntity('generic-thumbnails'
 // These are kept as they are from your provided code.
 const uploadEbookFiles = multer({ storage: memoryStorage, limits: { fileSize: 20 * 1024 * 1024 }, fileFilter: function (req, file, cb) { if (file.fieldname === "thumbnail") checkImageFileType(file, cb); else if (file.fieldname === "pdfFile") checkPdfFileType(file, cb); else cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname)); }, }).fields([ { name: 'thumbnail', maxCount: 1 }, { name: 'pdfFile', maxCount: 1 } ]);
 const uploadBlogCoverImage = multer({ storage: memoryStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: function (req, file, cb) { if (file.fieldname === "coverImageFile") checkImageFileType(file, cb); else cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname + '. Expected coverImageFile.')); } }).single('coverImageFile');
-const uploadNutritionPlanAssets = multer({ storage: multer.diskStorage({ destination: function(req, file, cb) { let destPath; if (file.fieldname === 'thumbnailFile') destPath = path.join(baseUploadsDir, 'nutrition-thumbnails'); else if (file.fieldname === 'pdfFileNew') destPath = path.join(baseUploadsDir, 'nutrition-pdfs'); else return cb(new Error('Invalid fieldname for nutrition plan asset. Expected "thumbnailFile" or "pdfFileNew".'), null); fs.mkdirSync(destPath, { recursive: true }); cb(null, destPath); }, filename: function (req, file, cb) { const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9); const extension = path.extname(file.originalname); const originalNamePart = path.basename(file.originalname, extension).substring(0, 50).replace(/[^a-zA-Z0-9_.-]/g, '_'); cb(null, `${file.fieldname}-${originalNamePart}-${uniqueSuffix}${extension}`); } }), limits: { fileSize: 20 * 1024 * 1024 }, fileFilter: function (req, file, cb) { if (file.fieldname === "thumbnailFile") checkImageFileType(file, cb); else if (file.fieldname === "pdfFileNew") checkPdfFileType(file, cb); else cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', `Unexpected field: ${file.fieldname}. Expected "thumbnailFile" or "pdfFileNew".`)); } }).fields([ { name: 'thumbnailFile', maxCount: 1 }, { name: 'pdfFileNew', maxCount: 1 } ]);
+
+// THIS IS THE ONLY MODIFIED SECTION
+const uploadNutritionPlanAssets = multer({
+    storage: memoryStorage, // Changed from diskStorage to memoryStorage for Cloudinary
+    limits: { fileSize: 25 * 1024 * 1024 }, // Increased limit slightly for memory handling
+    fileFilter: function (req, file, cb) {
+        if (file.fieldname === "thumbnailFile") {
+            checkImageFileType(file, cb);
+        } else if (file.fieldname === "pdfFileNew") {
+            checkPdfFileType(file, cb);
+        } else {
+            cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', `Unexpected field: ${file.fieldname}. Expected "thumbnailFile" or "pdfFileNew".`));
+        }
+    }
+}).fields([
+    { name: 'thumbnailFile', maxCount: 1 },
+    { name: 'pdfFileNew', maxCount: 1 }
+]);
+
 const uploadSingleNutritionThumbnail = multer({ storage: nutritionThumbnailsStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: function(req, file, cb) { if (file.fieldname === "thumbnail") checkImageFileType(file, cb); else cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname + '. Expected thumbnail.')); } }).single('thumbnail');
 const uploadSinglePodcastThumbnail = multer({ storage: podcastThumbnailsStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: function(req, file, cb) { if (file.fieldname === "thumbnail") checkImageFileType(file, cb); else cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname + '. Expected thumbnail.')); } }).single('thumbnail');
 const uploadSingleProgramThumbnail = multer({ storage: programThumbnailsStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: function(req, file, cb) { if (file.fieldname === "thumbnail") checkImageFileType(file, cb); else cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname + '. Expected thumbnail.')); } }).single('thumbnail');
