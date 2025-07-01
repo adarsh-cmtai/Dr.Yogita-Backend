@@ -24,10 +24,11 @@ const uploadToCloudinary = (fileBuffer, folder) => {
 // @route   POST /api/podcast-episodes
 // @access  Private (add auth later)
 exports.createPodcastEpisode = async (req, res, next) => {
-  const { podcastSeriesId, title, description, youtubeLink, duration, episodeNumber, publishDate } = req.body;
+  const { podcastSeries, title, description, youtubeLink, duration, episodeNumber, publishDate } = req.body;
   const thumbnailFile = req.file; // From multer 'uploadPodcastEpisodeThumbnail'
+  console.log("this is episode");
 
-  if (!podcastSeriesId || !title || !description || !youtubeLink || !duration || !episodeNumber) {
+  if (!podcastSeries || !title || !description || !youtubeLink || !duration || !episodeNumber) {
     return res.status(400).json({ success: false, error: 'PodcastSeriesID, Title, Description, YouTube Link, Duration, and Episode Number are required.' });
   }
   if (!thumbnailFile) {
@@ -37,7 +38,7 @@ exports.createPodcastEpisode = async (req, res, next) => {
   let uploadResult;
   try {
     // Check if podcast series exists
-    const seriesExists = await PodcastSeries.findById(podcastSeriesId);
+    const seriesExists = await PodcastSeries.findById(podcastSeries);
     if (!seriesExists) {
         return res.status(404).json({ success: false, error: 'Podcast series not found.' });
     }
@@ -45,7 +46,7 @@ exports.createPodcastEpisode = async (req, res, next) => {
     uploadResult = await uploadToCloudinary(thumbnailFile.buffer, "podcast_episode_thumbnails");
     
     const newEpisode = new PodcastEpisode({
-      podcastSeries: podcastSeriesId,
+      podcastSeries: podcastSeries,
       title,
       description,
       youtubeLink,
