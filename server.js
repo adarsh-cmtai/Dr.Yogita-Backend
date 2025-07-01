@@ -6,7 +6,6 @@ const connectDB = require('./config/db');
 const path = require('path'); // For serving static files
 const blogRoutes = require('./routes/blogRoutes');
 const settingRoutes = require('./routes/setting.routes.js');
-
 dotenv.config();
 connectDB();
 
@@ -19,6 +18,7 @@ const nutritionPlanRoutes = require('./routes/nutritionPlanRoutes'); // Import n
 const podcastSeriesRoutes = require('./routes/podcastSeriesRoutes'); // New
 const podcastEpisodeRoutes = require('./routes/podcastEpisodeRoutes');
 const programSeriesRoutes = require('./routes/programSeriesRoutes'); 
+const appointmentRoutes = require('./routes/appointmentRoutes'); 
 // const commentRoutes = require('./routes/comments');
 
 const app = express();
@@ -47,6 +47,7 @@ app.use('/api/podcast-series', podcastSeriesRoutes);         // New mount point 
 app.use('/api/podcast-episodes', podcastEpisodeRoutes);  
 app.use('/api/program-series', programSeriesRoutes);
 app.use('/api/settings', settingRoutes);
+app.use('/api/appointments', appointmentRoutes); 
 // app.use('/api/comments', commentRoutes);
 
 // Basic error handler (ensure it's AFTER your routes)
