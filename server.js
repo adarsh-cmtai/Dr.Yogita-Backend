@@ -22,15 +22,24 @@ const appointmentRoutes = require('./routes/appointmentRoutes');
 // const commentRoutes = require('./routes/comments');
 
 const app = express();
+const allowedOrigins = [
+  "https://dr-yogita-frontend.vercel.app",
+  "https://www.yogitas.com",              
+  "http://localhost:3000"                  
+];
 
-app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL,
-    "https://dr-yogita-frontend.vercel.app",
-    "https://www.yogitas.com"
-  ],
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS')); 
+    }
+  },
   credentials: true,
-}));
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
