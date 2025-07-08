@@ -12,7 +12,7 @@ const { uploadPodcastSeriesCover } = require('../middlewares/uploadMiddleware');
 
 // Public routes
 router.get('/', getAllPodcastSeries);
-router.get('/:identifier', getPodcastSeriesByIdentifier); // Can be ID or slug
+router.get('/id/:identifier', getPodcastSeriesByIdentifier); // Can be ID or slug
 
 // Protected routes (add authentication middleware here eventually)
 router.post('/', uploadPodcastSeriesCover, createPodcastSeries); // Use multer middleware for cover image
