@@ -25,7 +25,8 @@ const app = express();
 const allowedOrigins = [
   "https://dr-yogita-frontend.vercel.app",
   "https://www.yogitas.com",              
-  "http://localhost:3000"                  
+  "http://localhost:3000",
+  "https://dr-yogita-backend-flame.vercel.appdryogita-backend-production.up.railway.app"
 ];
 
 const corsOptions = {
